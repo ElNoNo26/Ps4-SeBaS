@@ -1,6 +1,10 @@
 <?php
-// ¡Esta es la línea mágica que oculta los avisos de PHP 8+!
-error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
+// ==========================================
+// FIX CRÍTICO: SILENCIAR ADVERTENCIAS PHP 8+
+// Esto evita que textos HTML rompan las respuestas JSON (Error de Red)
+// ==========================================
+error_reporting(0);
+ini_set('display_errors', 0);
 
 /**
  * ============================================================================
@@ -41,7 +45,7 @@ if (!file_exists('icon-512.png')) {
     $ch = curl_init($icon_url); $fp = fopen('icon-512.png', 'wb');
     curl_setopt($ch, CURLOPT_FILE, $fp); curl_setopt($ch, CURLOPT_HEADER, 0);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_exec($ch); curl_close($ch); fclose($fp);
+    @curl_exec($ch); @curl_close($ch); @fclose($fp);
 }
 
 // ==========================================
@@ -51,7 +55,9 @@ $iconos_locales = [];
 if (!file_exists('iconos')) { @mkdir('iconos', 0777, true); }
 if (file_exists('iconos') && is_dir('iconos')) {
     $archivos = glob('iconos/*.{jpg,jpeg,png,gif}', GLOB_BRACE);
-    foreach($archivos as $archivo) { $iconos_locales[] = ['nombre' => basename($archivo), 'url' => $archivo]; }
+    if($archivos) {
+        foreach($archivos as $archivo) { $iconos_locales[] = ['nombre' => basename($archivo), 'url' => $archivo]; }
+    }
 }
 
 // ==========================================
@@ -61,7 +67,6 @@ if (isset($_POST['action']) && $_POST['action'] == 'download_to_gallery') {
     header('Content-Type: application/json');
     $url = $_POST['url'];
     
-    // FIX: Sanitización segura y extensión estricta de imágenes
     $raw_name = isset($_POST['name']) ? $_POST['name'] : 'icon_' . time() . '.png';
     $ext = strtolower(pathinfo($raw_name, PATHINFO_EXTENSION));
     if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif'])) { $ext = 'png'; }
@@ -73,8 +78,8 @@ if (isset($_POST['action']) && $_POST['action'] == 'download_to_gallery') {
     curl_setopt($ch, CURLOPT_FILE, $fp); curl_setopt($ch, CURLOPT_HEADER, 0);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_USERAGENT, 'GoldHen-FTP-App');
-    curl_exec($ch); $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch); fclose($fp);
+    @curl_exec($ch); $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    @curl_close($ch); @fclose($fp);
     if ($http_code == 200 || $http_code == 0) { echo json_encode(['status' => 'success', 'file' => $destino]); } 
     else { @unlink($destino); echo json_encode(['status' => 'error', 'message' => "Fallo HTTP $http_code"]); }
     exit;
@@ -89,7 +94,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'ping' && isset($_GET['ip'])) {
     if (strpos($ip, '127.') === 0) { echo json_encode(['status' => 'error']); exit; }
     $fp = @fsockopen($ip, $port, $errno, $errstr, 0.3);
     if ($fp) {
-        stream_set_timeout($fp, 0, 300000); $banner = fgets($fp, 256); fclose($fp);
+        stream_set_timeout($fp, 0, 300000); $banner = @fgets($fp, 256); @fclose($fp);
         if ($banner !== false && stripos($banner, 'KSWEB') === false && stripos($banner, 'bftpd') === false) {
             echo json_encode(['status' => 'success', 'ip' => $ip]); 
         } else { echo json_encode(['status' => 'error']); }
@@ -106,7 +111,7 @@ if (isset($_POST['action']) && in_array($_POST['action'], ['list_dir', 'delete_i
     $conn_id = @ftp_connect($host_ip, 2121, 5);
     
     if ($conn_id && @ftp_login($conn_id, "anonymous", "")) {
-        ftp_pasv($conn_id, true);
+        @ftp_pasv($conn_id, true);
         
         if ($_POST['action'] == 'list_dir') {
             $path = $_POST['path'];
@@ -133,12 +138,12 @@ if (isset($_POST['action']) && in_array($_POST['action'], ['list_dir', 'delete_i
             $path = $_POST['path']; $is_dir = $_POST['is_dir'] === 'true';
             $res = $is_dir ? @ftp_rmdir($conn_id, $path) : @ftp_delete($conn_id, $path);
             if ($res) echo json_encode(['status' => 'success']);
-            else echo json_encode(['status' => 'error', 'message' => 'No se pudo borrar. (¿Carpeta llena o archivo protegido?)']);
+            else echo json_encode(['status' => 'error', 'message' => 'No se pudo borrar.']);
         }
         elseif ($_POST['action'] == 'mkdir') {
             $path = $_POST['path'];
             if (@ftp_mkdir($conn_id, $path)) echo json_encode(['status' => 'success']);
-            else echo json_encode(['status' => 'error', 'message' => 'No se pudo crear la carpeta.']);
+            else echo json_encode(['status' => 'error', 'message' => 'No se pudo crear.']);
         }
         elseif ($_POST['action'] == 'rename') {
             $old = $_POST['old_path']; $new = $_POST['new_path'];
@@ -169,7 +174,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'upload_icon') {
         }
         $conn_id = @ftp_connect($host_ip, $puerto_ftp, 10);
         if (!$conn_id || !@ftp_login($conn_id, "anonymous", "")) throw new Exception("Error FTP.");
-        ftp_pasv($conn_id, true); @ftp_mkdir($conn_id, "/user/appmeta/" . $cusa_id);
+        @ftp_pasv($conn_id, true); @ftp_mkdir($conn_id, "/user/appmeta/" . $cusa_id);
         if (@ftp_put($conn_id, $ruta_remota, $archivo_temporal, FTP_BINARY)) { echo json_encode(['status' => 'success', 'message' => "Icono aplicado en $cusa_id."]); } 
         else { throw new Exception("Error al subir icono."); }
         @ftp_close($conn_id);
@@ -188,7 +193,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'upload_chunk') {
         $archivo_temporal = $_FILES['archivo_subida']['tmp_name'];
         $conn_id = @ftp_connect($host_ip, $puerto_ftp, 10);
         if ($conn_id && @ftp_login($conn_id, "anonymous", "")) {
-            ftp_pasv($conn_id, true);
+            @ftp_pasv($conn_id, true);
             if ($chunk_index === 0) { @ftp_delete($conn_id, $ruta_remota); $result = @ftp_put($conn_id, $ruta_remota, $archivo_temporal, FTP_BINARY); } 
             else {
                 if (function_exists('ftp_append')) { $result = @ftp_append($conn_id, $ruta_remota, $archivo_temporal, FTP_BINARY); } 
@@ -196,7 +201,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'upload_chunk') {
                     $ch = curl_init(); $fp = fopen($archivo_temporal, 'r');
                     curl_setopt($ch, CURLOPT_URL, "ftp://$host_ip:$puerto_ftp$ruta_remota"); curl_setopt($ch, CURLOPT_UPLOAD, 1); 
                     curl_setopt($ch, CURLOPT_INFILE, $fp); curl_setopt($ch, CURLOPT_INFILESIZE, filesize($archivo_temporal)); 
-                    curl_setopt($ch, CURLOPT_FTPAPPEND, true); $result = curl_exec($ch); curl_close($ch); fclose($fp);
+                    curl_setopt($ch, CURLOPT_FTPAPPEND, true); $result = curl_exec($ch); @curl_close($ch); @fclose($fp);
                 }
             }
             if ($result) { echo json_encode(['status' => 'success']); } else { echo json_encode(['status' => 'error']); }
@@ -1075,3 +1080,5 @@ $subred_actual = (strpos($ip_servidor, '192.168.') === 0) ? substr($ip_servidor,
     </script>
 </body>
 </html>
+
+

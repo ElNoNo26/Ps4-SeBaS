@@ -1,10 +1,10 @@
 <?php
 // ==========================================
-// FIX CRÍTICO: SILENCIAR ADVERTENCIAS PHP 8+
-// Esto evita que textos HTML rompan las respuestas JSON (Error de Red)
+// FIX: Silenciador total de errores para PHP 8+
+// Evita que textos de advertencia rompan el JSON y causen "Error de Red"
 // ==========================================
 error_reporting(0);
-ini_set('display_errors', 0);
+@ini_set('display_errors', 0);
 
 /**
  * ============================================================================
@@ -16,8 +16,6 @@ ini_set('display_errors', 0);
  * * ====================================================================
  * DEVELOPED BY: SeBaS
  * VERSION: V20 (Definitive Edition)
- * DESCRIPTION: Ultimate PS4 FTP Manager, Modding Suite & File Explorer
- * WARNING: Prohibida su copia o distribución sin créditos al autor.
  * ====================================================================
  */
 
@@ -27,7 +25,7 @@ ini_set('display_errors', 0);
 $manifest_content = '{
   "name": "Gold Hen Suite Pro by SeBaS",
   "short_name": "Gold Hen",
-  "description": "Gestor de transferencia FTP y Modding para PS4 creado por SeBaS",
+  "description": "Gestor de transferencia FTP y Modding para PS4",
   "start_url": "./index.php",
   "display": "standalone",
   "orientation": "portrait",
@@ -45,7 +43,7 @@ if (!file_exists('icon-512.png')) {
     $ch = curl_init($icon_url); $fp = fopen('icon-512.png', 'wb');
     curl_setopt($ch, CURLOPT_FILE, $fp); curl_setopt($ch, CURLOPT_HEADER, 0);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    @curl_exec($ch); @curl_close($ch); @fclose($fp);
+    @curl_exec($ch); @fclose($fp); // Omitimos curl_close para evitar el Deprecated de PHP 8
 }
 
 // ==========================================
@@ -61,7 +59,7 @@ if (file_exists('iconos') && is_dir('iconos')) {
 }
 
 // ==========================================
-// 3. DESCARGAR IMÁGENES A LA GALERÍA LOCAL (FIX RCE)
+// 3. DESCARGAR IMÁGENES A LA GALERÍA LOCAL
 // ==========================================
 if (isset($_POST['action']) && $_POST['action'] == 'download_to_gallery') {
     header('Content-Type: application/json');
@@ -79,26 +77,29 @@ if (isset($_POST['action']) && $_POST['action'] == 'download_to_gallery') {
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_USERAGENT, 'GoldHen-FTP-App');
     @curl_exec($ch); $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    @curl_close($ch); @fclose($fp);
+    @fclose($fp);
+    
+    ob_clean(); // Limpiar basura antes de enviar JSON
     if ($http_code == 200 || $http_code == 0) { echo json_encode(['status' => 'success', 'file' => $destino]); } 
     else { @unlink($destino); echo json_encode(['status' => 'error', 'message' => "Fallo HTTP $http_code"]); }
     exit;
 }
 
 // ==========================================
-// 4. LÓGICA ESCÁNER DE RED (AJAX PING)
+// 4. LÓGICA ESCÁNER DE RED
 // ==========================================
 if (isset($_GET['action']) && $_GET['action'] == 'ping' && isset($_GET['ip'])) {
     header('Content-Type: application/json');
     $ip = $_GET['ip']; $port = 2121;
-    if (strpos($ip, '127.') === 0) { echo json_encode(['status' => 'error']); exit; }
+    if (strpos($ip, '127.') === 0) { ob_clean(); echo json_encode(['status' => 'error']); exit; }
     $fp = @fsockopen($ip, $port, $errno, $errstr, 0.3);
     if ($fp) {
         stream_set_timeout($fp, 0, 300000); $banner = @fgets($fp, 256); @fclose($fp);
+        ob_clean();
         if ($banner !== false && stripos($banner, 'KSWEB') === false && stripos($banner, 'bftpd') === false) {
             echo json_encode(['status' => 'success', 'ip' => $ip]); 
         } else { echo json_encode(['status' => 'error']); }
-    } else { echo json_encode(['status' => 'error']); }
+    } else { ob_clean(); echo json_encode(['status' => 'error']); }
     exit;
 }
 
@@ -110,6 +111,7 @@ if (isset($_POST['action']) && in_array($_POST['action'], ['list_dir', 'delete_i
     $host_ip = $_POST['host_ip'];
     $conn_id = @ftp_connect($host_ip, 2121, 5);
     
+    ob_clean(); // Asegurar respuesta limpia
     if ($conn_id && @ftp_login($conn_id, "anonymous", "")) {
         @ftp_pasv($conn_id, true);
         
@@ -137,18 +139,18 @@ if (isset($_POST['action']) && in_array($_POST['action'], ['list_dir', 'delete_i
         elseif ($_POST['action'] == 'delete_item') {
             $path = $_POST['path']; $is_dir = $_POST['is_dir'] === 'true';
             $res = $is_dir ? @ftp_rmdir($conn_id, $path) : @ftp_delete($conn_id, $path);
-            if ($res) echo json_encode(['status' => 'success']);
-            else echo json_encode(['status' => 'error', 'message' => 'No se pudo borrar.']);
+            if ($res) { echo json_encode(['status' => 'success']); }
+            else { echo json_encode(['status' => 'error', 'message' => 'No se pudo borrar.']); }
         }
         elseif ($_POST['action'] == 'mkdir') {
             $path = $_POST['path'];
-            if (@ftp_mkdir($conn_id, $path)) echo json_encode(['status' => 'success']);
-            else echo json_encode(['status' => 'error', 'message' => 'No se pudo crear.']);
+            if (@ftp_mkdir($conn_id, $path)) { echo json_encode(['status' => 'success']); }
+            else { echo json_encode(['status' => 'error', 'message' => 'No se pudo crear.']); }
         }
         elseif ($_POST['action'] == 'rename') {
             $old = $_POST['old_path']; $new = $_POST['new_path'];
-            if (@ftp_rename($conn_id, $old, $new)) echo json_encode(['status' => 'success']);
-            else echo json_encode(['status' => 'error', 'message' => 'Error al mover o renombrar.']);
+            if (@ftp_rename($conn_id, $old, $new)) { echo json_encode(['status' => 'success']); }
+            else { echo json_encode(['status' => 'error', 'message' => 'Error al mover.']); }
         }
     } else { echo json_encode(['status' => 'error', 'message' => 'No conectado a la PS4.']); }
     @ftp_close($conn_id);
@@ -164,6 +166,8 @@ if (isset($_POST['action']) && $_POST['action'] == 'upload_icon') {
     $source_type = $_POST['source_type']; $puerto_ftp = 2121;
     $ruta_remota = "/user/appmeta/" . $cusa_id . "/icon0.png";
     $archivo_temporal = "";
+    
+    ob_clean();
     try {
         if ($source_type == 'local_gallery') {
             $path = $_POST['icon_path'];
@@ -189,6 +193,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'upload_chunk') {
     $file_name = $_POST['file_name']; $chunk_index = (int)$_POST['chunk_index'];
     $puerto_ftp = 2121; $ruta_remota = $ruta_destino . $file_name;
     
+    ob_clean();
     if (isset($_FILES['archivo_subida']) && $_FILES['archivo_subida']['error'] === UPLOAD_ERR_OK) {
         $archivo_temporal = $_FILES['archivo_subida']['tmp_name'];
         $conn_id = @ftp_connect($host_ip, $puerto_ftp, 10);
@@ -201,7 +206,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'upload_chunk') {
                     $ch = curl_init(); $fp = fopen($archivo_temporal, 'r');
                     curl_setopt($ch, CURLOPT_URL, "ftp://$host_ip:$puerto_ftp$ruta_remota"); curl_setopt($ch, CURLOPT_UPLOAD, 1); 
                     curl_setopt($ch, CURLOPT_INFILE, $fp); curl_setopt($ch, CURLOPT_INFILESIZE, filesize($archivo_temporal)); 
-                    curl_setopt($ch, CURLOPT_FTPAPPEND, true); $result = curl_exec($ch); @curl_close($ch); @fclose($fp);
+                    curl_setopt($ch, CURLOPT_FTPAPPEND, true); $result = curl_exec($ch); @fclose($fp);
                 }
             }
             if ($result) { echo json_encode(['status' => 'success']); } else { echo json_encode(['status' => 'error']); }
@@ -822,7 +827,6 @@ $subred_actual = (strpos($ip_servidor, '192.168.') === 0) ? substr($ip_servidor,
                     }
                 } else { await descargarAGaleria(urlInput, "icon_" + Date.now() + ".png"); }
                 
-                // FIX: Evitamos recargar toda la página bruscamente.
                 alert("¡Importación completada! Recarga la app para ver los nuevos iconos.");
                 btnCargar.innerText = "INICIAR IMPORTACIÓN"; 
                 btnCargar.disabled = false;
@@ -1010,7 +1014,7 @@ $subred_actual = (strpos($ip_servidor, '192.168.') === 0) ? substr($ip_servidor,
             for (let f = 0; f < files.length; f++) {
                 if (signal.aborted) { isCanceled = true; break; }
                 
-                // FIX: Chunk size reducido a 2MB para compatibilidad universal con PHP
+                // Chunk size reducido a 2MB
                 const file = files[f], chunkSize = 2 * 1024 * 1024, totalChunks = Math.ceil(file.size / chunkSize);
                 
                 let uploadedBytes = 0, startTime = new Date().getTime(), fileTotalGB = (file.size / (1024 * 1024 * 1024)).toFixed(2);
@@ -1037,7 +1041,6 @@ $subred_actual = (strpos($ip_servidor, '192.168.') === 0) ? substr($ip_servidor,
             if (isCanceled) { 
                 mostrarErrorFinal("ABORTADO", "Has cancelado la cola."); 
             } else if (filesSuccess === files.length) {
-                // FIX: Lógica añadida para ejecutar la API del Remote Package Installer (Auto-Install)
                 modalProgressContainer.classList.add('hidden'); modalCancelBtn.classList.add('hidden'); modalCloseBtn.classList.remove('hidden');
                 modalTitle.innerText = "¡MISIÓN CUMPLIDA!"; modalTitle.className = "text-lg font-black text-green-400 tracking-widest mb-2";
                 

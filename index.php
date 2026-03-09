@@ -1,4 +1,7 @@
 <?php
+// ¡Esta es la línea mágica que oculta los avisos de PHP 8+!
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
+
 /**
  * ============================================================================
  * ____        _     _   _   _             _____ _____ _____  ____  
